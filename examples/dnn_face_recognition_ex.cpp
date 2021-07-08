@@ -26,8 +26,15 @@
 #include <dlib/image_io.h>
 #include <dlib/image_processing/frontal_face_detector.h>
 
+#include <iostream>
+#include <ctime>
+
+// #include <filesystem>
+
 using namespace dlib;
 using namespace std;
+
+// namespace fs = std::filesystem;
 
 // ----------------------------------------------------------------------------------------
 
@@ -76,6 +83,23 @@ std::vector<matrix<rgb_pixel>> jitter_image(
     const matrix<rgb_pixel>& img
 );
 
+std::vector<matrix<rgb_pixel>> slicing( std::vector<matrix<rgb_pixel>>& arr, int X, int Y)
+{
+  
+    // Starting and Ending iterators
+    auto start = arr.begin() + X;
+    auto end = arr.begin() + Y + 1;
+  
+    // To store the sliced vector
+    std::vector<matrix<rgb_pixel>> result(Y - X + 1);
+  
+    // Copy vector using copy function()
+    copy(start, end, result.begin());
+  
+    // Return the final sliced vector
+    return result;
+}
+
 // ----------------------------------------------------------------------------------------
 
 int main(int argc, char** argv) try
@@ -92,7 +116,11 @@ int main(int argc, char** argv) try
         cout << endl;
         return 1;
     }
-
+    
+clock_t start, finish, inter_start, inter_finish;
+double duration;    
+start = clock();
+inter_start = clock();
     // The first thing we are going to do is load all our models.  First, since we need to
     // find faces in the image we will need a face detector:
     frontal_face_detector detector = get_frontal_face_detector();
@@ -102,10 +130,54 @@ int main(int argc, char** argv) try
     // And finally we load the DNN responsible for face recognition.
     anet_type net;
     deserialize("dlib_face_recognition_resnet_model_v1.dat") >> net;
-
+    
+inter_finish = clock();
+duration = (double)(inter_finish - inter_start) / CLOCKS_PER_SEC;
+cout << "Model load: " <<  duration << "초" << endl;
+inter_start = clock();
     matrix<rgb_pixel> img;
     load_image(img, argv[1]);
     // Display the raw image on the screen
+
+#if 1 //test
+    //C++17 only
+    // std::string path = "/home/sparkleholic/Projects/team8/Jetson_nano_face_recognition_dev/_out";
+    // for (const auto & entry : fs::directory_iterator(path)) {
+    //     std::cout << entry.path() << std::endl;
+    // }
+
+    DIR *dir;
+    // char *dir_path = "/home/sparkleholic/Projects/team8/Jetson_nano_face_recognition_dev/_out/";
+    char *dir_path = "/home/sparkleholic/Projects/team8/Jetson_nano_face_recognition_dev/known_only/";
+    struct dirent *ent;
+    std::vector<matrix<rgb_pixel>> faces;
+
+    if ((dir = opendir(dir_path)) != NULL)
+    {
+        /* print all the files and directories within directory */
+        while ((ent = readdir(dir)) != NULL)
+        {
+            printf("%s\n", ent->d_name);
+            if (!strcmp(".", ent->d_name) || !strcmp("..", ent->d_name)) continue;
+            load_image( img, string(dir_path) + string(ent->d_name) );
+            for (auto face : detector(img))
+            {
+                auto shape = sp(img, face);
+                matrix<rgb_pixel> face_chip;
+                extract_image_chip(img, get_face_chip_details(shape,150,0.25), face_chip);
+                faces.push_back(move(face_chip));
+            }            
+        }
+        closedir(dir);
+    }
+    else
+    {
+        /* could not open directory */
+        perror("");
+        return EXIT_FAILURE;
+    }
+#endif    
+#if 0
     image_window win(img); 
 
     // Run the face detector on the image of our action heroes, and for each face extract a
@@ -122,6 +194,11 @@ int main(int argc, char** argv) try
         // them.
         win.add_overlay(face);
     }
+#endif    
+inter_finish = clock();
+duration = (double)(inter_finish - inter_start) / CLOCKS_PER_SEC;
+cout << "face detect: " <<  duration << "초" << ", num of faces:"<< faces.size() << endl;
+inter_start = clock();    
 
     if (faces.size() == 0)
     {
@@ -134,7 +211,13 @@ int main(int argc, char** argv) try
     // but vectors from different people will be far apart.  So we can use these vectors to
     // identify if a pair of images are from the same person or from different people.  
     std::vector<matrix<float,0,1>> face_descriptors = net(faces);
+    // std::vector<matrix<float,0,1>> face_descriptors = net(slicing(faces, 0, 2));
+    // std::vector<matrix<float,0,1>> face_descriptors = net(slicing(faces, 0, faces.size()/2+1));
 
+inter_finish = clock();
+duration = (double)(inter_finish - inter_start) / CLOCKS_PER_SEC;
+cout << "net: " <<  duration << "초" << endl;
+inter_start = clock();
 
     // In particular, one simple thing we can do is face clustering.  This next bit of code
     // creates a graph of connected faces and then uses the Chinese whispers graph clustering
@@ -156,7 +239,10 @@ int main(int argc, char** argv) try
     const auto num_clusters = chinese_whispers(edges, labels);
     // This will correctly indicate that there are 4 people in the image.
     cout << "number of people found in the image: "<< num_clusters << endl;
-
+inter_finish = clock();
+duration = (double)(inter_finish - inter_start) / CLOCKS_PER_SEC;
+cout << "cluster: " <<  duration << "초" << endl;
+// inter_start = clock();
 
     // Now let's display the face clustering results on the screen.  You will see that it
     // correctly grouped all the faces. 
@@ -174,8 +260,6 @@ int main(int argc, char** argv) try
     }
 
 
-
-
     // Finally, let's print one of the face descriptors to the screen.  
     cout << "face descriptor for one face: " << trans(face_descriptors[0]) << endl;
 
@@ -189,6 +273,10 @@ int main(int argc, char** argv) try
     // gets an accuracy of 99.13% on the LFW benchmark.  So jittering makes the whole
     // procedure a little more accurate but makes face descriptor calculation slower.
 
+finish = clock();
+
+duration = (double)(finish - start) / CLOCKS_PER_SEC;
+cout << duration << "초" << endl;
 
     cout << "hit enter to terminate" << endl;
     cin.get();
